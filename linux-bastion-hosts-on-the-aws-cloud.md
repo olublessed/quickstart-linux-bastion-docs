@@ -4,7 +4,7 @@
 
 _Santiago Cardenas, Tony Vattathil, and Ian Hill Solutions Architects, AWS Quick Start Reference Team_ 
 
-_September 2016 (Last update: April 2017)_
+_September 2016 (Last update: July 2017)_
 
 This Quick Start deployment guide provides instructions for deploying Linux bastion hosts 
 in an Amazon Virtual Private Cloud (Amazon VPC) environment on the Amazon Web 
@@ -515,6 +515,7 @@ You can visit our [GitHub repository](https://github.com/aws-quickstart/quicksta
 
 | Date | Change | Location |
 | --- | --- | --- |
+| July 2017 | Added option to use either Elastic IP(s) or an Elastic Load Balancer to connect to the bastion host(s) | Changes in templates and throughout guide |
 | April 2017 | Added Auto Scaling group, CloudWatch Logs, and additional configuration options | Changes in templates and throughout guide | 
 | September 2016 | Initial publication | - | 
 
