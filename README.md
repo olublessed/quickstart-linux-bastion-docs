@@ -1,3 +1,3 @@
 ## AWS Linux Bastion Quickstart Docs
 
-Update ideas to the existing docs
+[Here are some update ideas](https://github.com/spohnan/quickstart-linux-bastion-docs/compare/dev) to the existing docs
