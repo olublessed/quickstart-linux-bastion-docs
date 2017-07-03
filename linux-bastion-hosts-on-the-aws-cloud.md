@@ -40,17 +40,13 @@ practices for security and availability.
 
 ### Overview
 
+Bastion hosts to instances located in private and public subnets. This Quick Start deploys Linux 
+bastion host(s) into public subnets to provide readily available administrative access to the environment.
+
 This Quick Start provides a Linux bastion functionality for AWS Cloud infrastructures. It 
 deploys a virtual private cloud (VPC) using the [Amazon VPC Quick Start reference deployment](http://docs.aws.amazon.com/quickstart/latest/vpc/), sets up 
 private and public subnets, and deploys Linux bastion instances into that VPC. You can also 
-choose to deploy Linux bastion hosts into your existing AWS infrastructure. 
-
-The bastion hosts provide secure access to Linux instances located in the private and public 
-subnets. The Quick Start architecture deploys Linux bastion host instances into every public 
-subnet to provide readily available administrative access to the environment. The Quick 
-Start sets up a Multi-AZ environment consisting of two Availability Zones. If highly 
-available bastion access is not necessary, you can stop the instance in the second 
-Availability Zone and start it up when needed. 
+choose to deploy Linux bastion hosts into your existing VPC infrastructure. 
 
 You can use this Quick Start as a building block for your own Linux-based deployments. 
 You can add other infrastructure components and software layers to complete your Linux 
@@ -63,17 +59,28 @@ You are responsible for the cost of the AWS services used while running this Qui
 reference deployment. There is no additional cost for using the Quick Start. 
 
 The AWS CloudFormation template for this Quick Start includes configuration parameters 
-that you can customize. Some of the settings, such as the instance type, will determine the 
+that you can customize. Some of the settings, such as the number of bastion instances and type, will determine the 
 cost of deployment. For pricing details, see the [Amazon EC2 pricing](https://aws.amazon.com/ec2/pricing/) page. 
 
 ### Architecture 
+
+The default option will configure each bastion host with an [Elastic IP address](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html).
+This option is a good choice if your organization restricts SSH access and stable IP address(es) are needed to
+add to a local firewall access control list. This option will be referred to throughout the rest of this document as the
+EIP configuration.
+
+The second option will add an Elastic Load Balancer in front of the Auto Scaling Group. This option would be appropriate if
+you _do not_ have the stable IP requirement mentioned in the EIP configuration and have numerous individuals making use of 
+the bastion service. An example would be a development group where many developers require access to internal resources 
+through the bastion. After deployment you could [configure a DNS record](http://docs.aws.amazon.com/elasticloadbalancing/latest/classic/using-domain-names-with-elb.html) 
+that would allow access to all bastion instances using a single memorable name like ssh.environment.company.com
 
 Deploying this Quick Start with the **default parameters** builds the following virtual 
 networking environment in the AWS Cloud. (Note that the diagram doesn't show all the 
 components of the VPC architecture. For details about that architecture, see the [Amazon VPC Quick Start](http://docs.aws.amazon.com/quickstart/latest/vpc/architecture.html).) 
 
-![](http://docs.aws.amazon.com/quickstart/latest/linux-bastion/images/linux-bastion-hosts-on-aws-architecture.png)
-**Figure 1: Linux bastion host architecture on AWS**
+![](https://github.com/spohnan/quickstart-linux-bastion-docs/raw/dev/images/architecture-diagram-eip.png)
+##### Figure 1: Linux bastion host architecture on AWS - EIP Configuration
 
 The Quick Start builds a networking environment that includes the following components. 
 If you already have an AWS infrastructure, the Quick Start also provides an option for 
@@ -86,14 +93,44 @@ Start into an existing VPC skips the tasks marked by asterisks.)
 hosts to send and receive traffic.* 
 * Managed NAT gateways to allow outbound Internet access for resources in the private 
 subnets.* 
-* A Linux bastion host in each public subnet with an Elastic IP address to allow inbound 
-Secure Shell (SSH) access to EC2 instances in public and private subnets. 
+* A single Linux bastion host in a public subnet with an Elastic IP address to allow inbound 
+Secure Shell (SSH) access to EC2 instances in public and private subnets. More instances can be added if high availability is desired. 
 * A security group for fine-grained inbound access control. 
 * An Amazon EC2 Auto Scaling group with a configurable number of instances. 
 * A set of Elastic IP addresses that match the number of bastion host instances. If the 
 Auto Scaling group relaunches any instances, these addresses are reassociated with the 
 new instances. 
 * An Amazon CloudWatch Logs log group to hold the Linux bastion host shell history logs. 
+
+![](https://github.com/spohnan/quickstart-linux-bastion-docs/raw/dev/images/architecture-diagram-elb.png)
+##### Figure 2: Linux bastion host architecture on AWS - ELB Configuration
+
+The ELB Configuration adds two additional components to the architecture.
+
+* An S3 bucket used to synchronize the SSH server certificates for all bastion instances registered with the load balancer.
+* A load balancer that distributes requests between all the available bastion instances.
+
+###### ELB Configuration Notes
+
+* The S3 bucket provisioned by the CloudFormation template is not deleted when the stack is terminated and will result in a very small
+ charge per month if not removed.
+* The connection idle timeout setting has been bumped up to 75 seconds on the load balancer but clients will need to configure a
+ ServerAliveIngterval in their SSH configuration to keep from getting disconnected every minute.
+
+    ```
+    Host bastion
+        Hostame ssh.environment.company.com
+
+    Host internal
+        HostName 172.31.10.187
+        ProxyJump bastion
+        User centos
+
+    Host *
+        ServerAliveInterval 60
+        User ec2-user
+    ```
+    **`~/.ssh/config` file example showing connection through bastion and setting ServerAliveInterval**
 
 #### AWS Services 
 
@@ -124,6 +161,14 @@ instances available to handle the load for your application. You create collecti
 instances, called Auto Scaling groups. When you deploy the Quick Start, you can specify 
 the desired number of instances in each Auto Scaling group, and Auto Scaling ensures 
 that your group has this number of instances at all times. 
+* [Elastic IP address](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html) - An Elastic IP address is a static IPv4 
+address designed for dynamic cloud computing. An Elastic IP address is associated with your 
+AWS account. With an Elastic IP address, you can mask the failure of an instance or software 
+by rapidly remapping the address to another instance in your account.
+* [Elastic Load Balancing](https://aws.amazon.com/elasticloadbalancing/) - Elastic Load Balancing automatically distributes incoming application 
+traffic across multiple Amazon EC2 instances. It enables you to achieve fault tolerance in 
+your applications, seamlessly providing the required amount of load balancing capacity 
+needed to route application traffic.
 * [Amazon CloudWatch Logs](http://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/) - You can use Amazon CloudWatch Logs to monitor, store, 
 and access your log files from EC2 instances, AWS CloudTrail, and other sources. You 
 can retrieve the log data from CloudWatch Logs, and monitor your EC2 instances in real 
@@ -147,11 +192,15 @@ across the VPC. You can configure the number of bastion host instances at launch
 * An Auto Scaling group ensures that the number of bastion host instances always 
 matches the desired capacity you specify during launch. 
 * Bastion hosts are deployed in the public (DMZ) subnets of the VPC. 
-* Elastic IP addresses are associated with the bastion instances to make it easier to 
-remember and allow these IP addresses from on-premises firewalls. If an instance is 
+* When using the default EIP configuration Elastic IP addresses are associated with the 
+bastion instances which allow these IP addresses from on-premises firewalls. If an instance is 
 terminated and the Auto Scaling group launches a new instance in its place, the existing 
 Elastic IP addresses are reassociated with the new instances. This ensures that the same 
 trusted Elastic IP addresses are used at all times. 
+* When using the ELB configuration you have the option to replace bastion instances using a 
+scheduled rotation. The integrity of bastion hosts is critical to maintaining access control and 
+replacing bastions with known good images makes it more difficult for an attacker to maintain
+ a foothold if an instance is compromised.
 * Access to the bastion hosts are locked down to known CIDR scopes for ingress. This is 
 achieved by associating the bastion instances with a security group. The Quick Start 
 creates a BastionSecurityGroup resource for this purpose. 
@@ -177,7 +226,7 @@ can change these settings during deployment.
 	##### Note
 	You can also change the number and type of bastion host instances after 
 	deployment, by updating the AWS CloudFormation stack and changing the parameters. 
-	Reconfiguring the bastion host instances updates the related Elastic IP addresses and 
+	When using the EIP configuration reconfiguring the bastion host instances updates the related Elastic IP addresses and 
 	changes the bootstrapping logic in the launch configuration and Auto Scaling group. 
 	However, before you update the stack, you must terminate the instances you want to 
 	replace while keeping the Elastic IP addresses. When you update the stack, Auto Scaling 
@@ -221,7 +270,7 @@ phone call and entering a PIN using the phone keypad.
 to deploy the Quick Start on AWS. 
 
 	![](http://docs.aws.amazon.com/quickstart/latest/linux-bastion/images/choosing-region.png)
-	##### Figure 2: Choosing an AWS Region
+	##### Figure 3: Choosing an AWS Region
 
 	##### Tip 
 	Consider choosing a region closest to your data center or corporate network to 
@@ -233,7 +282,7 @@ Amazon EC2 console, choose **Key Pairs**, **Create Key Pair**, type a name, and 
 
 ![](http://docs.aws.amazon.com/quickstart/latest/linux-bastion/images/create-key-pair.png)
 
-##### Figure 3: Creating a key pair 
+##### Figure 4: Creating a key pair 
 
 Amazon EC2 uses public-key cryptography to encrypt and decrypt login information. To 
 be able to log in to your instances, you must create a key pair. On Linux, the key pair is 
@@ -291,6 +340,14 @@ instances, or choose a banner that is displayed when you connect to the bastion 
 	| **Public Subnet 2 CIDR** | PublicSubnet2CIDR| 10.0.144.0/20 | CIDR block for the public subnet located in Availability Zone 2. |
 	| **Allowed Bastion External Access CIDR** | RemoteAccessCIDR | _Requires input_ | CIDR block that's allowed SSH external access to the bastion hosts. We recommend that you set this value to a trusted CIDR block. For example, you might want to restrict access to your corporate network. |
 
+    _Elastic Load Balancing Configuration:_
+    
+    | Parameter label | Parameter Name | Default | Description |
+    | --- | --- | --- |  --- |
+    | **Elastic Load Balancing**| UseELB | false | ELB provides single name but multiple IPs. EIPs will be used if false |
+    | **Rotation Start** | ELBRotationScheduleUp | blank (optional) | [Cron schedule](https://en.wikipedia.org/wiki/Cron) to add an additional bastion to start a rotation event. Example: 45 23 * * 6 (11:45 PM every Saturday) |
+    | **Rotation Finish** | ELBRotationScheduleDown | blank (optional) | [Cron schedule](https://en.wikipedia.org/wiki/Cron) to remove a bastion to complete a rotation event. Example: 55 23 * * 6 (11:55 PM every Saturday) |
+    
 	_Amazon EC2 Configuration:_ 
 
 	| Parameter label | Parameter Name | Default | Description | 
@@ -328,6 +385,14 @@ instances, or choose a banner that is displayed when you connect to the bastion 
 	| **Public Subnet 1 ID** | PublicSubnet1ID | _Requires input_ | ID of the public subnet you want to provision the first bastion host into (e.g., subnet-a0246dcd). |
 	| **Public Subnet 2 ID** | PublicSubnet2ID | _Requires input_ | ID of the public subnet you want to provision the second bastion host into (e.g., subnet-e3246d8e). | 
 	| **Allowed Bastion External Access CIDR** | RemoteAccessCIDR | _Requires input_ | CIDR block that's allowed SSH external access to the bastion hosts. We recommend that you set this value to a trusted CIDR block. For example, you might want to restrict access to your corporate network. |
+
+    _Elastic Load Balancing Configuration:_
+    
+    | Parameter label | Parameter Name | Default | Description |
+    | --- | --- | --- |  --- |
+    | **Elastic Load Balancing**| UseELB | false | ELB provides single name but multiple IPs. EIPs will be used if false |
+    | **Rotation Start** | ELBRotationScheduleUp | blank (optional) | [Cron schedule](https://en.wikipedia.org/wiki/Cron) to add an additional bastion to start a rotation event. Example: 45 23 * * 6 (11:45 PM every Saturday) |
+    | **Rotation Finish** | ELBRotationScheduleDown | blank (optional) | [Cron schedule](https://en.wikipedia.org/wiki/Cron) to remove a bastion to complete a rotation event. Example: 55 23 * * 6 (11:55 PM every Saturday) |
 
 	_Amazon EC2 Configuration:_
 	
@@ -374,12 +439,12 @@ Start into an existing VPC, where that option is available.
 
 ### Customizing the Linux Bastion Host Banner 
 
-This Quick Start provides the default banner illustrated in Figure 4 for the Linux bastion 
+This Quick Start provides the default banner illustrated in Figure 5 for the Linux bastion 
 hosts. The banner is suppressed by default, but you can enable it by setting the 
 **EnableBanner** parameter to true during deployment. 
 
 ![](http://docs.aws.amazon.com/quickstart/latest/linux-bastion/images/default-linux-bastion-banner.png)
-##### Figure 4. Default banner for Linux bastion hosts 
+##### Figure 5. Default banner for Linux bastion hosts 
 
 To customize the banner, you can create a ASCII text file with your own banner content, 
 upload it to an S3 bucket or other publicly accessible location, and make sure that it is 
@@ -397,16 +462,16 @@ in a CloudWatch Logs log group in the AWS Cloud, and will remain available in ca
 bastion hosts fail. 
 
 The log includes a history of all the commands that are executed when a user logs in. For 
-example, Figure 5 shows a log that recorded that a user logged in through a specific IP 
+example, Figure 6 shows a log that recorded that a user logged in through a specific IP 
 address and attempted to remove the password file as a standard user, and then escalated 
 to root access and tried to remove the bastion log. 
 
 ![](http://docs.aws.amazon.com/quickstart/latest/linux-bastion/images/linux-bastion-command-logger.png)
-##### Figure 5. Command logger for bastion hosts
+##### Figure 6. Command logger for bastion hosts
 
 If you'd like to notify your users that all their commands will be monitored and logged, we 
 recommend that you enable the bastion host banner, as described in the previous section. 
-The default banner text includes the alert shown in Figure 4, and you can customize the 
+The default banner text includes the alert shown in Figure 5, and you can customize the 
 wording as necessary. 
 
 The bastion.log file has the immutable bit set, so it cannot be easily removed or tampered 
@@ -469,9 +534,11 @@ you create the stack. For more information about AWS CloudFormation limits, see 
 
 ### Security 
 
-This Quick Start provisions one Linux bastion host in each Availability Zone with a single 
+This Quick Start provisions Linux bastion instances across Availability Zones with a single 
 security group as a virtual firewall. This security group is required for remote access from 
 the Internet. The security group is configured as follows: 
+
+#### EIP Configuration
 
 Inbound: 
 
@@ -486,6 +553,39 @@ Outbound:
 | --- | --- | --- |
 | 0.0.0.0/0 | All | All | 
 
+When using the ELB configuration option the ELB has a security group attached with a similar set of ingress 
+rules. The bastion instance security group is updated to only accept traffic from instances that have the ELB
+security group assigned so there is no direct access to bastion instances and all traffic has to go through the ELB.
+
+#### ELB Configuration
+
+##### ELB Security Group
+
+Inbound: 
+
+| Source | Protocol | Ports | 
+| --- | --- | --- |
+| Remote access CIDR | TCP | 22 |  
+
+Outbound: 
+
+| Destination | Protocol | Ports | 
+| --- | --- | --- |
+| 0.0.0.0/0 | All | All | 
+
+##### Bastion Instance Security Group
+
+Inbound: 
+
+| Source | Protocol | Ports | 
+| --- | --- | --- |
+| ELB Security Group | TCP | 22 |  
+
+Outbound: 
+
+| Destination | Protocol | Ports | 
+| --- | --- | --- |
+| 0.0.0.0/0 | All | All | 
 
 For additional details, see [Security in Your VPC](http://docs.aws.amazon.com/AmazonVPC/latest/UserGuide/VPC_Security.html) in the Amazon VPC documentation. 
 
